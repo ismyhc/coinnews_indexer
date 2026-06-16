@@ -1,0 +1,25 @@
+# Built binary (matches the module name and `go build -o` output)
+/coinnews-indexer
+/out/
+
+# SQLite database + WAL/SHM sidecars (never commit indexed data)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Go test/coverage output
+*.test
+*.out
+coverage.txt
+
+# Local env / secrets (RPC creds, etc.)
+.env
+.env.*
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp

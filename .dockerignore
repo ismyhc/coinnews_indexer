@@ -1,0 +1,15 @@
+# build output
+coinnews-indexer
+/out
+
+# local databases (incl. WAL/SHM sidecars)
+*.db
+*.db-wal
+*.db-shm
+
+# docs / misc not needed in the image
+*.md
+.git
+.gitignore
+Dockerfile
+.dockerignore

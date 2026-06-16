@@ -1,0 +1,232 @@
+openapi: 3.1.0
+info:
+  title: CoinNews Indexer API
+  version: "1.0"
+  description: >
+    Read-only JSON API over a CoinNews index. Ids and keys are hex strings
+    (item_id 12 bytes, topic 4 bytes, author_xpk 32 bytes).
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      summary: Liveness check
+      operationId: healthz
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /v1/frontpage:
+    get:
+      summary: Stories ranked by the Hacker News score
+      operationId: listFrontPage
+      parameters:
+        - $ref: "#/components/parameters/Topic"
+        - $ref: "#/components/parameters/Subtype"
+        - $ref: "#/components/parameters/NSFW"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200": { $ref: "#/components/responses/ItemList" }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/new:
+    get:
+      summary: Stories newest-first
+      operationId: listNewFeed
+      parameters:
+        - $ref: "#/components/parameters/Topic"
+        - $ref: "#/components/parameters/Subtype"
+        - $ref: "#/components/parameters/NSFW"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200": { $ref: "#/components/responses/ItemList" }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/items/{id}:
+    get:
+      summary: Get a single story by item id
+      operationId: getItem
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      responses:
+        "200":
+          description: The story
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/items/{id}/thread:
+    get:
+      summary: All comments under an item (nested)
+      operationId: listThread
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      responses:
+        "200":
+          description: Thread comments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  root_id: { type: string }
+                  comments:
+                    type: array
+                    items: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/authors/{xpk}/comments:
+    get:
+      summary: Comments by an author
+      operationId: listByAuthor
+      parameters:
+        - name: xpk
+          in: path
+          required: true
+          description: Author x-only pubkey (32-byte hex)
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Comments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/topics:
+    get:
+      summary: List created (named) topics
+      operationId: listTopics
+      description: >
+        Lists topics that have an on-chain TopicCreation message. Topic ids
+        referenced only by stories are not listed (browse their stories via
+        /v1/topics/{topic}/items). The reserved zero topic (00000000) is excluded.
+      responses:
+        "200":
+          description: Topics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topics:
+                    type: array
+                    items: { $ref: "#/components/schemas/Topic" }
+  /v1/topics/{topic}/items:
+    get:
+      summary: Stories in a topic
+      operationId: listByTopic
+      parameters:
+        - name: topic
+          in: path
+          required: true
+          description: Topic id (4-byte hex)
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200": { $ref: "#/components/responses/ItemList" }
+        "400": { $ref: "#/components/responses/Error" }
+components:
+  parameters:
+    ItemId:
+      name: id
+      in: path
+      required: true
+      description: Item id (12-byte hex)
+      schema: { type: string }
+    Topic:
+      name: topic
+      in: query
+      description: Filter by topic id (4-byte hex)
+      schema: { type: string }
+    Subtype:
+      name: subtype
+      in: query
+      description: "Story subtype: 0 link, 1 text, 2 ask, 3 show, 4 poll, 5 job"
+      schema: { type: integer, minimum: 0, maximum: 5 }
+    NSFW:
+      name: nsfw
+      in: query
+      description: Include NSFW stories (excluded by default)
+      schema: { type: boolean }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, default: 0 }
+  responses:
+    ItemList:
+      description: A list of stories
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              items:
+                type: array
+                items: { $ref: "#/components/schemas/Item" }
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+  schemas:
+    Item:
+      type: object
+      properties:
+        item_id: { type: string }
+        topic: { type: string }
+        headline: { type: string }
+        url: { type: string }
+        body: { type: string }
+        subtype: { type: integer }
+        lang: { type: string }
+        nsfw: { type: boolean }
+        txid: { type: string }
+        vout: { type: integer }
+        block_height: { type: integer }
+        block_time: { type: integer, description: unix seconds }
+        points: { type: integer, description: upvotes minus downvotes }
+        comment_count: { type: integer }
+        score: { type: number }
+    Comment:
+      type: object
+      properties:
+        item_id: { type: string }
+        parent_id: { type: string }
+        author_xpk: { type: string }
+        body: { type: string }
+        url: { type: string }
+        lang: { type: string }
+        reply_quote: { type: string }
+        block_height: { type: integer }
+        block_time: { type: integer }
+        points: { type: integer }
+        score: { type: number }
+    Topic:
+      type: object
+      properties:
+        topic: { type: string }
+        name: { type: string }
+        story_count: { type: integer }
+        retention_days: { type: integer }
+        created_height: { type: integer }
+        txid: { type: string }

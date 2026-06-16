@@ -147,6 +147,23 @@ Notes:
   indexer resumes from its cursor instead of re-scanning from genesis.
 - Never expose a node's RPC port to the public internet.
 
+### HTTPS with Caddy
+
+To serve the container over HTTPS, put [Caddy](https://caddyserver.com) in front of
+it — it obtains and renews a Let's Encrypt certificate automatically.
+`scripts/install-caddy.sh` installs Caddy (Ubuntu 24.04 / Debian via apt) and
+configures it to reverse-proxy your domain to the container's `:8080`.
+
+Prerequisites: a domain whose DNS points at the host, ports 80/443 open, and the
+container published with `-p 8080:8080` (as above).
+
+```sh
+sudo ./scripts/install-caddy.sh coinnews.example.com you@example.com
+```
+
+That's it — `https://coinnews.example.com` proxies to the indexer, with the
+certificate issued on first request. Watch progress with `journalctl -u caddy -f`.
+
 ## API
 
 Interactive docs: **`GET /docs`** (Swagger UI) — the OpenAPI 3.1 spec is served at

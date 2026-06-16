@@ -84,7 +84,7 @@ func toConnectItem(f store.FeedItem) connectItem {
 		Subtype:      subtypeName(f.Subtype),
 		Lang:         f.Lang,
 		NSFW:         f.NSFW,
-		AuthorXPKHex: "", // stories are unsigned; authorship is layered via comments
+		AuthorXPKHex: authorHex(f.AuthorXPK), // derived from the story's first comment
 		BlockHeight:  uint32(f.Height),
 		BlockTime:    rfc3339(f.BlockTime),
 		Points:       int32(f.Points),
@@ -249,26 +249,13 @@ func (s *Server) connectByAuthor(w http.ResponseWriter, r *http.Request) {
 		connectErr(w, "invalid_argument", http.StatusBadRequest, err.Error())
 		return
 	}
-	// The reference returns Items for an author. Stories are unsigned, so we map
-	// authorship through comments: the distinct stories this author commented on.
-	comments, err := s.st.ByAuthor(r.Context(), xpk, 0, 0)
+	// Stories authored by this key (author = the story's first comment author).
+	feed, err := s.st.ItemsByAuthor(r.Context(), xpk, int(limitOrDefault(req.Limit)), int(req.Offset))
 	if err != nil {
 		connectErr(w, "internal", http.StatusInternalServerError, err.Error())
 		return
 	}
-	seen := map[codec.ItemID]bool{}
-	var items []connectItem
-	for _, c := range comments {
-		if seen[c.ParentID] {
-			continue
-		}
-		seen[c.ParentID] = true
-		if it, ok, _ := s.st.GetItem(r.Context(), c.ParentID); ok {
-			items = append(items, toConnectItem(it))
-		}
-	}
-	items = pageConnect(items, limitOrDefault(req.Limit), int(req.Offset))
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": connectItems(feed)})
 }
 
 func (s *Server) connectByTopic(w http.ResponseWriter, r *http.Request) {

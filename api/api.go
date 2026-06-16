@@ -34,6 +34,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/items/{id}", s.handleGetItem)
 	s.mux.HandleFunc("GET /v1/items/{id}/thread", s.handleThread)
 	s.mux.HandleFunc("GET /v1/authors/{xpk}/comments", s.handleByAuthor)
+	s.mux.HandleFunc("GET /v1/authors/{xpk}/items", s.handleAuthorItems)
 	s.mux.HandleFunc("GET /v1/topics", s.handleTopics)
 	s.mux.HandleFunc("GET /v1/topics/{topic}/items", s.handleByTopic)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -126,6 +127,21 @@ func (s *Server) handleByAuthor(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toComment(c))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"comments": out})
+}
+
+func (s *Server) handleAuthorItems(w http.ResponseWriter, r *http.Request) {
+	xpk, err := parseXOnly(r.PathValue("xpk"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	limit, offset := pageParams(r)
+	items, err := s.st.ItemsByAuthor(r.Context(), xpk, limit, offset)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, feedResponse(items))
 }
 
 func (s *Server) handleTopics(w http.ResponseWriter, r *http.Request) {

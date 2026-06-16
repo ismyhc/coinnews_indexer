@@ -196,7 +196,10 @@ SELECT s.item_id, i.txid, i.vout, i.block_height, i.tx_index, i.vout_index, i.bl
        COALESCE(s.url,''), COALESCE(s.body,''), COALESCE(s.lang,''), s.nsfw,
        COALESCE((SELECT SUM(CASE WHEN v.kind=? THEN 1 ELSE 0 END) - SUM(CASE WHEN v.kind=? THEN 1 ELSE 0 END)
                  FROM cn_votes v WHERE v.target_id=s.item_id), 0) AS points,
-       COALESCE((SELECT COUNT(*) FROM cn_comments c WHERE c.parent_id=s.item_id), 0) AS ccount
+       COALESCE((SELECT COUNT(*) FROM cn_comments c WHERE c.parent_id=s.item_id), 0) AS ccount,
+       (SELECT c.author_xpk FROM cn_comments c JOIN cn_items ci ON ci.item_id=c.item_id
+        WHERE c.parent_id=s.item_id
+        ORDER BY ci.block_height, ci.tx_index, ci.vout_index LIMIT 1) AS author_xpk
 FROM cn_stories s JOIN cn_items i ON i.item_id=s.item_id`
 
 func (s *SQLiteStore) queryFeed(ctx context.Context, where string, args []any, nowUnix int64) ([]FeedItem, error) {
@@ -211,14 +214,17 @@ func (s *SQLiteStore) queryFeed(ctx context.Context, where string, args []any, n
 	var out []FeedItem
 	for rows.Next() {
 		var f FeedItem
-		var idb, topicb []byte
+		var idb, topicb, authorb []byte
 		var subtype, nsfw int
 		if err := rows.Scan(&idb, &f.TxID, &f.Vout, &f.Height, &f.TxIndex, &f.VoutIndex, &f.BlockTime,
-			&topicb, &f.Headline, &subtype, &f.URL, &f.Body, &f.Lang, &nsfw, &f.Points, &f.CommentCount); err != nil {
+			&topicb, &f.Headline, &subtype, &f.URL, &f.Body, &f.Lang, &nsfw, &f.Points, &f.CommentCount, &authorb); err != nil {
 			return nil, err
 		}
 		copy(f.ID[:], idb)
 		copy(f.Topic[:], topicb)
+		if len(authorb) == codec.XOnlyPubKeyLen {
+			copy(f.AuthorXPK[:], authorb)
+		}
 		f.Item.TypeTag = codec.TypeStory
 		f.Subtype = codec.Subtype(subtype)
 		f.NSFW = nsfw != 0
@@ -268,6 +274,21 @@ func (s *SQLiteStore) NewFeed(ctx context.Context, q FeedQuery) ([]FeedItem, err
 
 func (s *SQLiteStore) ByTopic(ctx context.Context, topic codec.Topic, limit, offset int) ([]FeedItem, error) {
 	return s.NewFeed(ctx, FeedQuery{Topic: &topic, IncludeNSFW: true, Limit: limit, Offset: offset})
+}
+
+func (s *SQLiteStore) ItemsByAuthor(ctx context.Context, author codec.XOnlyPubKey, limit, offset int) ([]FeedItem, error) {
+	all, err := s.queryFeed(ctx, "", nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	var out []FeedItem
+	for _, f := range all {
+		if f.AuthorXPK == author {
+			out = append(out, f)
+		}
+	}
+	sortByNewest(out)
+	return page(out, limit, offset), nil
 }
 
 func (s *SQLiteStore) GetItem(ctx context.Context, id codec.ItemID) (FeedItem, bool, error) {

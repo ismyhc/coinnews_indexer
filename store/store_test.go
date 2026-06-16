@@ -184,6 +184,31 @@ func TestOnlyCreatedTopicsListed(t *testing.T) {
 	})
 }
 
+func TestFirstCommentAuthorship(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		ctx := context.Background()
+		story := id(1)
+		seedStory(t, s, story, 10)
+		// Two comments by different authors; author(5)'s is earlier in canonical order.
+		seedComment(t, s, id(2), story, author(5), 11) // first
+		seedComment(t, s, id(3), story, author(9), 12) // later
+
+		// The story's author is the earliest comment's author.
+		f, ok, _ := s.GetItem(ctx, story)
+		if !ok || f.AuthorXPK != author(5) {
+			t.Fatalf("expected author(5) from first comment, got %x (ok=%v)", f.AuthorXPK, ok)
+		}
+		// ItemsByAuthor attributes the story to author(5), not author(9).
+		mine, _ := s.ItemsByAuthor(ctx, author(5), 0, 0)
+		if len(mine) != 1 || mine[0].ID != story {
+			t.Fatalf("expected story attributed to author(5), got %+v", mine)
+		}
+		if others, _ := s.ItemsByAuthor(ctx, author(9), 0, 0); len(others) != 0 {
+			t.Fatalf("author(9) only commented, should author nothing, got %d", len(others))
+		}
+	})
+}
+
 func TestReorgRewind(t *testing.T) {
 	eachBackend(t, func(t *testing.T, s Store) {
 		ctx := context.Background()

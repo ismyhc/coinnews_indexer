@@ -96,13 +96,16 @@ type FeedQuery struct {
 // FeedItem is a story enriched with vote tally, comment count, and rank score.
 type FeedItem struct {
 	Item
-	Topic        codec.Topic
-	Headline     string
-	URL          string
-	Body         string
-	Lang         string
-	Subtype      codec.Subtype
-	NSFW         bool
+	Topic    codec.Topic
+	Headline string
+	URL      string
+	Body     string
+	Lang     string
+	Subtype  codec.Subtype
+	NSFW     bool
+	// AuthorXPK is the author of the story's earliest direct comment, layering
+	// authorship onto otherwise-unsigned stories (zero if it has no comments).
+	AuthorXPK    codec.XOnlyPubKey
 	Points       int // upvotes - downvotes
 	CommentCount int
 	Score        float64
@@ -156,6 +159,9 @@ type Store interface {
 	GetItem(ctx context.Context, id codec.ItemID) (FeedItem, bool, error)
 	Thread(ctx context.Context, root codec.ItemID) ([]ThreadComment, error)
 	ByAuthor(ctx context.Context, author codec.XOnlyPubKey, limit, offset int) ([]ThreadComment, error)
+	// ItemsByAuthor returns the stories authored by an x-only pubkey, where a
+	// story's author is the author of its earliest direct comment.
+	ItemsByAuthor(ctx context.Context, author codec.XOnlyPubKey, limit, offset int) ([]FeedItem, error)
 	ByTopic(ctx context.Context, topic codec.Topic, limit, offset int) ([]FeedItem, error)
 	ListTopics(ctx context.Context) ([]Topic, error)
 }

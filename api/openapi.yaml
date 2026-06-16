@@ -104,6 +104,24 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/Comment" }
         "400": { $ref: "#/components/responses/Error" }
+  /v1/authors/{xpk}/items:
+    get:
+      summary: Stories authored by an author
+      operationId: listAuthorItems
+      description: >
+        Stories attributed to the author, where a story's author is the author of
+        its earliest direct comment (authorship layered onto unsigned stories).
+      parameters:
+        - name: xpk
+          in: path
+          required: true
+          description: Author x-only pubkey (32-byte hex)
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200": { $ref: "#/components/responses/ItemList" }
+        "400": { $ref: "#/components/responses/Error" }
   /v1/topics:
     get:
       summary: List created (named) topics
@@ -200,6 +218,7 @@ components:
         subtype: { type: integer }
         lang: { type: string }
         nsfw: { type: boolean }
+        author_xpk: { type: string, description: author of the story's first comment (empty if none) }
         txid: { type: string }
         vout: { type: integer }
         block_height: { type: integer }

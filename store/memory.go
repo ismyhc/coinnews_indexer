@@ -223,6 +223,37 @@ func (m *MemoryStore) commentCount(parent codec.ItemID) int {
 	return n
 }
 
+// firstCommentAuthor returns the author of the earliest direct comment on parent
+// (canonical order), or the zero key if it has no comments.
+func (m *MemoryStore) firstCommentAuthor(parent codec.ItemID) codec.XOnlyPubKey {
+	var author codec.XOnlyPubKey
+	var best Item
+	found := false
+	for _, c := range m.comments {
+		if c.ParentID != parent {
+			continue
+		}
+		it := m.items[c.ID]
+		if !found || itemBefore(it, best) {
+			best = it
+			author = c.AuthorXPK
+			found = true
+		}
+	}
+	return author
+}
+
+// itemBefore reports whether a precedes b in canonical scan order.
+func itemBefore(a, b Item) bool {
+	if a.Height != b.Height {
+		return a.Height < b.Height
+	}
+	if a.TxIndex != b.TxIndex {
+		return a.TxIndex < b.TxIndex
+	}
+	return a.VoutIndex < b.VoutIndex
+}
+
 func (m *MemoryStore) buildFeed(now int64) []FeedItem {
 	out := make([]FeedItem, 0, len(m.stories))
 	for id, s := range m.stories {
@@ -240,6 +271,7 @@ func (m *MemoryStore) buildFeed(now int64) []FeedItem {
 			Lang:         s.Lang,
 			Subtype:      s.Subtype,
 			NSFW:         s.NSFW,
+			AuthorXPK:    m.firstCommentAuthor(id),
 			Points:       pts,
 			CommentCount: m.commentCount(id),
 			Score:        rankScore(pts, now, it.BlockTime),
@@ -299,9 +331,24 @@ func (m *MemoryStore) GetItem(_ context.Context, id codec.ItemID) (FeedItem, boo
 	pts := m.tally(id)
 	return FeedItem{
 		Item: it, Topic: s.Topic, Headline: s.Headline, URL: s.URL, Body: s.Body, Lang: s.Lang,
-		Subtype: s.Subtype, NSFW: s.NSFW, Points: pts, CommentCount: m.commentCount(id),
+		Subtype: s.Subtype, NSFW: s.NSFW, AuthorXPK: m.firstCommentAuthor(id),
+		Points: pts, CommentCount: m.commentCount(id),
 		Score: rankScore(pts, resolveNow(0), it.BlockTime),
 	}, true, nil
+}
+
+func (m *MemoryStore) ItemsByAuthor(_ context.Context, author codec.XOnlyPubKey, limit, offset int) ([]FeedItem, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	all := m.buildFeed(resolveNow(0))
+	var out []FeedItem
+	for _, f := range all {
+		if f.AuthorXPK == author {
+			out = append(out, f)
+		}
+	}
+	sortByNewest(out)
+	return page(out, limit, offset), nil
 }
 
 func (m *MemoryStore) threadComment(c Comment, now int64) ThreadComment {

@@ -166,8 +166,14 @@ certificate issued on first request. Watch progress with `journalctl -u caddy -f
 
 ## API
 
-Interactive docs: **`GET /docs`** (Swagger UI) — the OpenAPI 3.1 spec is served at
+Two equivalent surfaces are served from the same store: a **REST/JSON** API and a
+**ConnectRPC-compatible** API that's a drop-in for the reference
+`coinnews.v1.CoinNewsService`. Use whichever your client expects.
+
+Interactive docs: **`GET /docs`** (Swagger UI) — the OpenAPI 3.1 spec is at
 `GET /openapi.yaml`.
+
+### REST
 
 Responses are JSON; ids/keys are hex (`item_id` 12 bytes, `topic` 4 bytes,
 `author_xpk` 32 bytes).
@@ -179,7 +185,8 @@ Responses are JSON; ids/keys are hex (`item_id` 12 bytes, `topic` 4 bytes,
 | `GET /v1/items/{id}` | A single story by item id |
 | `GET /v1/items/{id}/thread` | All comments under an item (nested) |
 | `GET /v1/authors/{xpk}/comments` | Comments by an author |
-| `GET /v1/topics` | All topics |
+| `GET /v1/authors/{xpk}/items` | Stories authored by an author (see below) |
+| `GET /v1/topics` | Created (named) topics |
 | `GET /v1/topics/{topic}/items` | Stories in a topic |
 | `GET /healthz` | Liveness check |
 
@@ -197,15 +204,50 @@ Story shape:
 ```json
 {
   "item_id": "…", "topic": "01020304", "headline": "…",
-  "url": "…", "subtype": 0, "nsfw": false,
+  "url": "…", "subtype": 0, "nsfw": false, "author_xpk": "…",
   "txid": "…", "vout": 0, "block_height": 12345, "block_time": 1700000000,
   "points": 7, "comment_count": 3, "score": 1.42
 }
 ```
 
-A topic has `created` (whether an on-chain `TopicCreation` named it) and
-`story_count`. Topics referenced only by stories appear with `created: false` and
-an empty `name`. The reserved zero topic (`00000000`, "no topic") is never listed.
+`/v1/topics` lists only topics with an on-chain `TopicCreation` (each with a
+`story_count`). Topic ids referenced only by stories aren't listed — browse their
+stories via `/v1/topics/{topic}/items`. The reserved zero topic (`00000000`, "no
+topic") is never listed.
+
+**Story authorship.** Stories are unsigned on-chain, so authorship is layered from
+the **author of the story's earliest direct comment**. That author is exposed as
+`author_xpk` on items (empty if the story has no comments), and
+`/v1/authors/{xpk}/items` returns the stories so attributed. (This goes beyond the
+reference server, which leaves item authors empty and only finds stories an author
+*commented on*.)
+
+### ConnectRPC-compatible
+
+A drop-in for the reference CoinNews server — same method paths, same JSON shapes
+(protobuf's lowerCamelCase fields, enum-name subtypes, RFC3339 timestamps) — with
+no protobuf/codegen on our side. Existing Connect clients can point straight here.
+Each method is a `POST` with a JSON body:
+
+| Method (`POST /coinnews.v1.CoinNewsService/…`) | Request body |
+|---|---|
+| `ListFrontPage` | `{ "limit", "offset", "subtype?", "topicHex?" }` |
+| `ListNewFeed` | `{ "limit", "offset", "subtype?", "topicHex?" }` |
+| `GetItem` | `{ "itemIdHex" }` |
+| `ListThread` | `{ "rootIdHex" }` |
+| `ListByAuthor` | `{ "authorXpkHex", "limit", "offset" }` — stories authored by the key |
+| `ListByTopic` | `{ "topicHex", "limit", "offset" }` |
+| `ListTopics` | `{}` |
+
+```sh
+curl -X POST http://localhost:8080/coinnews.v1.CoinNewsService/ListNewFeed \
+  -H 'Content-Type: application/json' -d '{"limit":20}'
+```
+
+> The proto shapes match the reference exactly. Two deliberate improvements beyond
+> it: items carry a populated `authorXpkHex` (derived from the story's first
+> comment), and `ListByAuthor` returns the stories an author *authored* rather than
+> merely commented on.
 
 ## Test
 

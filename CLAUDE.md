@@ -220,7 +220,8 @@ Read-only endpoints over the SQLite store (mirror the reference server's capabil
 - **Get item** — by `item_id`.
 - **Thread** — all comments under a root id, assembled into a tree by `parent_id`,
   each node carrying its own vote tally + score.
-- **List by author** — comments by `author_xpk` (`limit`/`offset`).
+- **List by author** — comments by `author_xpk` (`/comments`) or stories authored by
+  them (`/items`, attributed via each story's first comment).
 - **List by topic** — by `topic` (`limit`/`offset`).
 - **List topics** — includes topics referenced only by stories (`created:false`, empty `name`,
   `story_count`); the reserved zero topic is excluded.

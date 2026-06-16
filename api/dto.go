@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/hex"
 
+	"github.com/ismyhc/coinnews-indexer/codec"
 	"github.com/ismyhc/coinnews-indexer/store"
 )
 
@@ -16,6 +17,7 @@ type itemDTO struct {
 	Subtype      int     `json:"subtype"`
 	Lang         string  `json:"lang,omitempty"`
 	NSFW         bool    `json:"nsfw"`
+	AuthorXPK    string  `json:"author_xpk,omitempty"`
 	TxID         string  `json:"txid"`
 	Vout         uint32  `json:"vout"`
 	BlockHeight  int64   `json:"block_height"`
@@ -61,6 +63,7 @@ func toItem(f store.FeedItem) itemDTO {
 		Subtype:      int(f.Subtype),
 		Lang:         f.Lang,
 		NSFW:         f.NSFW,
+		AuthorXPK:    authorHex(f.AuthorXPK),
 		TxID:         f.TxID,
 		Vout:         f.Vout,
 		BlockHeight:  f.Height,
@@ -85,6 +88,15 @@ func toComment(c store.ThreadComment) commentDTO {
 		Points:      c.Points,
 		Score:       c.Score,
 	}
+}
+
+// authorHex hex-encodes an x-only pubkey, returning "" for the zero key (a story
+// with no comments has no derived author).
+func authorHex(xpk codec.XOnlyPubKey) string {
+	if xpk == (codec.XOnlyPubKey{}) {
+		return ""
+	}
+	return hex.EncodeToString(xpk[:])
 }
 
 func toTopic(t store.Topic) topicDTO {

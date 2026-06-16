@@ -7,11 +7,20 @@ info:
     (item_id 12 bytes, topic 4 bytes, author_xpk 32 bytes).
 servers:
   - url: /
+tags:
+  - name: REST
+    description: REST/JSON API.
+  - name: ConnectRPC
+    description: >
+      ConnectRPC-compatible drop-in for coinnews.v1.CoinNewsService. Each method is
+      a POST with a JSON body; fields are lowerCamelCase, subtypes are enum names,
+      timestamps are RFC3339.
 paths:
   /healthz:
     get:
       summary: Liveness check
       operationId: healthz
+      tags: [REST]
       responses:
         "200":
           description: OK
@@ -25,6 +34,7 @@ paths:
     get:
       summary: Stories ranked by the Hacker News score
       operationId: listFrontPage
+      tags: [REST]
       parameters:
         - $ref: "#/components/parameters/Topic"
         - $ref: "#/components/parameters/Subtype"
@@ -38,6 +48,7 @@ paths:
     get:
       summary: Stories newest-first
       operationId: listNewFeed
+      tags: [REST]
       parameters:
         - $ref: "#/components/parameters/Topic"
         - $ref: "#/components/parameters/Subtype"
@@ -51,6 +62,7 @@ paths:
     get:
       summary: Get a single story by item id
       operationId: getItem
+      tags: [REST]
       parameters:
         - $ref: "#/components/parameters/ItemId"
       responses:
@@ -65,6 +77,7 @@ paths:
     get:
       summary: All comments under an item (nested)
       operationId: listThread
+      tags: [REST]
       parameters:
         - $ref: "#/components/parameters/ItemId"
       responses:
@@ -84,6 +97,7 @@ paths:
     get:
       summary: Comments by an author
       operationId: listByAuthor
+      tags: [REST]
       parameters:
         - name: xpk
           in: path
@@ -108,6 +122,7 @@ paths:
     get:
       summary: Stories authored by an author
       operationId: listAuthorItems
+      tags: [REST]
       description: >
         Stories attributed to the author, where a story's author is the author of
         its earliest direct comment (authorship layered onto unsigned stories).
@@ -126,6 +141,7 @@ paths:
     get:
       summary: List created (named) topics
       operationId: listTopics
+      tags: [REST]
       description: >
         Lists topics that have an on-chain TopicCreation message. Topic ids
         referenced only by stories are not listed (browse their stories via
@@ -145,6 +161,7 @@ paths:
     get:
       summary: Stories in a topic
       operationId: listByTopic
+      tags: [REST]
       parameters:
         - name: topic
           in: path
@@ -156,6 +173,121 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/ItemList" }
         "400": { $ref: "#/components/responses/Error" }
+
+  /coinnews.v1.CoinNewsService/ListFrontPage:
+    post:
+      summary: Ranked stories (Connect)
+      operationId: connectListFrontPage
+      tags: [ConnectRPC]
+      requestBody: { $ref: "#/components/requestBodies/ConnectFeed" }
+      responses:
+        "200": { $ref: "#/components/responses/ConnectItemList" }
+  /coinnews.v1.CoinNewsService/ListNewFeed:
+    post:
+      summary: Newest stories (Connect)
+      operationId: connectListNewFeed
+      tags: [ConnectRPC]
+      requestBody: { $ref: "#/components/requestBodies/ConnectFeed" }
+      responses:
+        "200": { $ref: "#/components/responses/ConnectItemList" }
+  /coinnews.v1.CoinNewsService/GetItem:
+    post:
+      summary: Get a story (Connect)
+      operationId: connectGetItem
+      tags: [ConnectRPC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { itemIdHex: { type: string } }
+      responses:
+        "200":
+          description: The story
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { item: { $ref: "#/components/schemas/ConnectItem" } }
+        "404": { $ref: "#/components/responses/ConnectError" }
+  /coinnews.v1.CoinNewsService/ListThread:
+    post:
+      summary: Thread comments (Connect)
+      operationId: connectListThread
+      tags: [ConnectRPC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { rootIdHex: { type: string } }
+      responses:
+        "200":
+          description: Comments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConnectComment" }
+  /coinnews.v1.CoinNewsService/ListByAuthor:
+    post:
+      summary: Stories authored by a key (Connect)
+      operationId: connectListByAuthor
+      tags: [ConnectRPC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                authorXpkHex: { type: string }
+                limit: { type: integer }
+                offset: { type: integer }
+      responses:
+        "200": { $ref: "#/components/responses/ConnectItemList" }
+  /coinnews.v1.CoinNewsService/ListByTopic:
+    post:
+      summary: Stories in a topic (Connect)
+      operationId: connectListByTopic
+      tags: [ConnectRPC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                topicHex: { type: string }
+                limit: { type: integer }
+                offset: { type: integer }
+      responses:
+        "200": { $ref: "#/components/responses/ConnectItemList" }
+  /coinnews.v1.CoinNewsService/ListTopics:
+    post:
+      summary: List created topics (Connect)
+      operationId: connectListTopics
+      tags: [ConnectRPC]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Topics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topics:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConnectTopic" }
 components:
   parameters:
     ItemId:
@@ -187,6 +319,18 @@ components:
       name: offset
       in: query
       schema: { type: integer, default: 0 }
+  requestBodies:
+    ConnectFeed:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              limit: { type: integer }
+              offset: { type: integer }
+              subtype: { type: string, description: enum name, e.g. SUBTYPE_LINK }
+              topicHex: { type: string }
   responses:
     ItemList:
       description: A list of stories
@@ -198,6 +342,16 @@ components:
               items:
                 type: array
                 items: { $ref: "#/components/schemas/Item" }
+    ConnectItemList:
+      description: A list of stories (Connect shape)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              items:
+                type: array
+                items: { $ref: "#/components/schemas/ConnectItem" }
     Error:
       description: Error
       content:
@@ -206,6 +360,15 @@ components:
             type: object
             properties:
               error: { type: string }
+    ConnectError:
+      description: Connect error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string, example: not_found }
+              message: { type: string }
   schemas:
     Item:
       type: object
@@ -248,4 +411,43 @@ components:
         story_count: { type: integer }
         retention_days: { type: integer }
         created_height: { type: integer }
+        txid: { type: string }
+    ConnectItem:
+      type: object
+      properties:
+        itemIdHex: { type: string }
+        topicHex: { type: string }
+        headline: { type: string }
+        url: { type: string }
+        body: { type: string }
+        subtype: { type: string, description: enum name, e.g. SUBTYPE_LINK }
+        lang: { type: string }
+        nsfw: { type: boolean }
+        authorXpkHex: { type: string, description: author of the story's first comment (empty if none) }
+        blockHeight: { type: integer }
+        blockTime: { type: string, format: date-time, description: RFC3339 }
+        points: { type: integer }
+        commentCount: { type: integer }
+        score: { type: number }
+    ConnectComment:
+      type: object
+      properties:
+        itemIdHex: { type: string }
+        parentIdHex: { type: string }
+        authorXpkHex: { type: string }
+        body: { type: string }
+        url: { type: string }
+        lang: { type: string }
+        replyQuote: { type: string }
+        blockHeight: { type: integer }
+        blockTime: { type: string, format: date-time }
+        points: { type: integer }
+        score: { type: number }
+    ConnectTopic:
+      type: object
+      properties:
+        topicHex: { type: string }
+        name: { type: string }
+        retentionDays: { type: integer }
+        createdHeight: { type: integer }
         txid: { type: string }

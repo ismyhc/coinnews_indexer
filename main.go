@@ -15,7 +15,23 @@ import (
 	"github.com/ismyhc/coinnews-indexer/rpc"
 	"github.com/ismyhc/coinnews-indexer/scanner"
 	"github.com/ismyhc/coinnews-indexer/store"
+	"github.com/ismyhc/coinnews-indexer/web"
 )
+
+// buildHandler composes the HTTP handler. The api package owns all of /v1, /docs,
+// and the Connect routes; the optional read-only frontend (separate web package)
+// is mounted only here at the exact root path, so the two never mingle. Drop the
+// web package + this branch (or pass -web=false) to remove the frontend.
+func buildHandler(st store.Store, serveWeb bool) http.Handler {
+	apiHandler := api.New(st)
+	if !serveWeb {
+		return apiHandler
+	}
+	root := http.NewServeMux()
+	root.Handle("GET /{$}", web.Handler()) // exact "/" → frontend
+	root.Handle("/", apiHandler)           // everything else → API
+	return root
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -52,6 +68,7 @@ func cmdRun(args []string) {
 	addr := fs.String("addr", ":8080", "API listen address")
 	start := fs.Int64("start", 0, "start block height (only used on a fresh DB)")
 	poll := fs.Duration("poll", 15*time.Second, "interval to re-scan for new blocks")
+	serveWeb := fs.Bool("web", true, "serve the read-only browser frontend at /")
 	_ = fs.Parse(args)
 
 	if *poll <= 0 {
@@ -85,7 +102,7 @@ func cmdRun(args []string) {
 	}()
 
 	// API server.
-	srv := &http.Server{Addr: *addr, Handler: api.New(st)}
+	srv := &http.Server{Addr: *addr, Handler: buildHandler(st, *serveWeb)}
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -147,6 +164,7 @@ func cmdServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	dbPath := fs.String("db", "coinnews.db", "SQLite database path")
 	addr := fs.String("addr", ":8080", "listen address")
+	serveWeb := fs.Bool("web", true, "serve the read-only browser frontend at /")
 	_ = fs.Parse(args)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -158,7 +176,7 @@ func cmdServe(args []string) {
 	}
 	defer st.Close()
 
-	srv := &http.Server{Addr: *addr, Handler: api.New(st)}
+	srv := &http.Server{Addr: *addr, Handler: buildHandler(st, *serveWeb)}
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

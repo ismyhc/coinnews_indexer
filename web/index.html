@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoinNews</title>
+<style>
+  body { font-family: Verdana, Geneva, sans-serif; font-size: 10pt; color: #000;
+         background: #f6f6ef; margin: 0; }
+  a { color: #000; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  #wrap { max-width: 900px; margin: 0 auto; background: #f6f6ef; }
+  header { background: #ff6600; padding: 4px 8px; display: flex; align-items: center; gap: 12px; }
+  header .logo { font-weight: bold; color: #000; }
+  header nav a { color: #000; font-size: 9pt; }
+  header nav a.active { text-decoration: underline; }
+  header .spacer { flex: 1; }
+  header label { color: #000; font-size: 8pt; }
+  main { padding: 8px; }
+  .controls { margin-bottom: 8px; font-size: 9pt; color: #555; }
+  .controls select { font-size: 9pt; }
+  ol.feed { padding-left: 0; list-style: none; counter-reset: rank; margin: 0; }
+  ol.feed > li { counter-increment: rank; display: flex; gap: 4px; margin-bottom: 6px; align-items: baseline; }
+  ol.feed > li::before { content: counter(rank) "."; color: #828282; min-width: 22px; text-align: right; }
+  .tri { color: #999; }
+  .title { }
+  .title .host { color: #828282; font-size: 8pt; }
+  .sub { color: #828282; font-size: 8pt; margin-top: 1px; }
+  .sub a { color: #828282; }
+  .topic { background: #ffe9d6; border: 1px solid #ffcfa3; border-radius: 3px; padding: 0 4px; }
+  .item-head { margin-bottom: 10px; }
+  .item-head .body { white-space: pre-wrap; margin-top: 6px; font-size: 9.5pt; color: #222; }
+  .comments { margin-top: 12px; }
+  .comment { margin: 8px 0; }
+  .comment .cmeta { color: #828282; font-size: 8pt; }
+  .comment .cbody { white-space: pre-wrap; font-size: 9.5pt; margin-top: 2px; }
+  .quote { border-left: 2px solid #ccc; padding-left: 6px; color: #666; font-style: italic; }
+  .muted { color: #828282; }
+  footer { padding: 12px 8px 24px; font-size: 8pt; color: #828282; border-top: 1px solid #e0e0d8; margin-top: 16px; }
+  #status { padding: 8px; color: #828282; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <a class="logo" href="#/">CoinNews</a>
+    <nav>
+      <a id="nav-top" href="#/">top</a> |
+      <a id="nav-new" href="#/new">new</a> |
+      <a id="nav-topics" href="#/topics">topics</a>
+    </nav>
+    <span class="spacer"></span>
+    <label><input type="checkbox" id="nsfw"> nsfw</label>
+    <nav><a href="/docs" title="API docs">api</a></nav>
+  </header>
+  <main id="main"><div id="status">loading…</div></main>
+  <footer>
+    Read-only explorer over a CoinNews index ·
+    <a href="/docs">API docs</a> · data from on-chain OP_RETURN
+  </footer>
+</div>
+
+<script>
+const API = ""; // same origin
+let topicNames = {}; // hex -> name
+
+async function api(path) {
+  const r = await fetch(API + path, { headers: { accept: "application/json" } });
+  if (!r.ok) throw new Error("HTTP " + r.status + " for " + path);
+  return r.json();
+}
+
+function esc(s) {
+  return (s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function timeAgo(unix) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - unix));
+  const u = [[31536000, "y"], [2592000, "mo"], [86400, "d"], [3600, "h"], [60, "m"]];
+  for (const [secs, label] of u) if (s >= secs) return Math.floor(s / secs) + label + " ago";
+  return s + "s ago";
+}
+
+function host(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
+
+function topicLabel(hex) {
+  const name = topicNames[hex];
+  const text = name ? name : hex;
+  return `<a class="topic" href="#/topic/${hex}">${esc(text)}</a>`;
+}
+
+function authorLabel(xpk) {
+  if (!xpk) return '<span class="muted">anon</span>';
+  return `<a href="#/author/${xpk}">${xpk.slice(0, 8)}…</a>`;
+}
+
+function setActive(id) {
+  for (const n of ["nav-top", "nav-new", "nav-topics"])
+    document.getElementById(n).classList.toggle("active", n === id);
+}
+
+function storyRow(it) {
+  const link = it.url ? it.url : `#/item/${it.item_id}`;
+  const ext = it.url ? ' target="_blank" rel="noopener"' : "";
+  const hostHtml = it.url ? ` <span class="host">(${esc(host(it.url))})</span>` : "";
+  const pts = it.points || 0;
+  return `<li>
+    <span class="tri">▲</span>
+    <div>
+      <div class="title"><a href="${esc(link)}"${ext}>${esc(it.headline)}</a>${hostHtml}</div>
+      <div class="sub">
+        ${pts} point${pts === 1 ? "" : "s"} ·
+        ${authorLabel(it.author_xpk)} ·
+        ${timeAgo(it.block_time)} ·
+        ${topicLabel(it.topic)} ·
+        <a href="#/item/${it.item_id}">${it.comment_count || 0} comment${it.comment_count === 1 ? "" : "s"}</a>
+      </div>
+    </div>
+  </li>`;
+}
+
+async function ensureTopics() {
+  if (Object.keys(topicNames).length) return;
+  try {
+    const d = await api("/v1/topics");
+    for (const t of d.topics || []) topicNames[t.topic] = t.name;
+  } catch { /* ignore */ }
+}
+
+function nsfwParam() {
+  return document.getElementById("nsfw").checked ? "&nsfw=true" : "";
+}
+
+async function viewFeed(kind, topic) {
+  setActive(kind === "new" ? "nav-new" : "nav-top");
+  await ensureTopics();
+  const main = document.getElementById("main");
+  const path = kind === "new" ? "/v1/new" : "/v1/frontpage";
+  const q = `?limit=50${topic ? "&topic=" + topic : ""}${nsfwParam()}`;
+  main.innerHTML = `<div id="status">loading…</div>`;
+  try {
+    const d = await api(path + q);
+    const items = d.items || [];
+    const heading = topic
+      ? `<div class="controls">topic ${topicLabel(topic)} — ${kind === "new" ? "newest" : "top"}</div>` : "";
+    main.innerHTML = heading +
+      (items.length ? `<ol class="feed">${items.map(storyRow).join("")}</ol>`
+                    : `<div class="muted">No stories.</div>`);
+  } catch (e) {
+    main.innerHTML = `<div class="muted">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function viewTopics() {
+  setActive("nav-topics");
+  const main = document.getElementById("main");
+  main.innerHTML = `<div id="status">loading…</div>`;
+  try {
+    const d = await api("/v1/topics");
+    for (const t of d.topics || []) topicNames[t.topic] = t.name;
+    const rows = (d.topics || []).map(t =>
+      `<li><a href="#/topic/${t.topic}">${esc(t.name || t.topic)}</a>
+        <span class="muted">· ${t.story_count} stor${t.story_count === 1 ? "y" : "ies"} · ${t.topic}</span></li>`).join("");
+    main.innerHTML = `<ol class="feed">${rows || '<li class="muted">No topics yet.</li>'}</ol>`;
+  } catch (e) {
+    main.innerHTML = `<div class="muted">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function commentTree(comments, rootId) {
+  const byParent = {};
+  for (const c of comments) (byParent[c.parent_id] ||= []).push(c);
+  function render(pid, depth) {
+    const kids = byParent[pid] || [];
+    return kids.map(c => `
+      <div class="comment" style="margin-left:${depth * 16}px">
+        <div class="cmeta">${authorLabel(c.author_xpk)} · ${timeAgo(c.block_time)} · ${c.points || 0} pts</div>
+        ${c.reply_quote ? `<div class="quote">${esc(c.reply_quote)}</div>` : ""}
+        <div class="cbody">${esc(c.body)}</div>
+        ${render(c.item_id, depth + 1)}
+      </div>`).join("");
+  }
+  return render(rootId, 0);
+}
+
+async function viewItem(id) {
+  setActive(null);
+  const main = document.getElementById("main");
+  main.innerHTML = `<div id="status">loading…</div>`;
+  await ensureTopics();
+  try {
+    const [it, thread] = await Promise.all([
+      api(`/v1/items/${id}`),
+      api(`/v1/items/${id}/thread`),
+    ]);
+    const link = it.url ? it.url : null;
+    const titleHtml = link
+      ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(it.headline)}</a> <span class="host">(${esc(host(it.url))})</span>`
+      : esc(it.headline);
+    const comments = thread.comments || [];
+    main.innerHTML = `
+      <div class="item-head">
+        <div class="title" style="font-size:11pt">${titleHtml}</div>
+        <div class="sub">
+          ${it.points || 0} points · ${authorLabel(it.author_xpk)} · ${timeAgo(it.block_time)} ·
+          ${topicLabel(it.topic)} · block ${it.block_height}
+        </div>
+        ${it.body ? `<div class="body">${esc(it.body)}</div>` : ""}
+      </div>
+      <div class="comments">
+        <div class="muted">${comments.length} comment${comments.length === 1 ? "" : "s"}</div>
+        ${commentTree(comments, it.item_id)}
+      </div>
+      <p><a href="#/">← back</a></p>`;
+  } catch (e) {
+    main.innerHTML = `<div class="muted">Error: ${esc(e.message)} <a href="#/">back</a></div>`;
+  }
+}
+
+async function viewAuthor(xpk) {
+  setActive(null);
+  await ensureTopics();
+  const main = document.getElementById("main");
+  main.innerHTML = `<div id="status">loading…</div>`;
+  try {
+    const d = await api(`/v1/authors/${xpk}/items?limit=50`);
+    const items = d.items || [];
+    main.innerHTML = `<div class="controls">stories authored by ${xpk.slice(0, 12)}…</div>` +
+      (items.length ? `<ol class="feed">${items.map(storyRow).join("")}</ol>`
+                    : `<div class="muted">No stories authored by this key.</div>`);
+  } catch (e) {
+    main.innerHTML = `<div class="muted">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function router() {
+  const h = location.hash.replace(/^#/, "") || "/";
+  const m = (re) => h.match(re);
+  let g;
+  if ((g = m(/^\/item\/([0-9a-fA-F]+)$/))) return viewItem(g[1]);
+  if ((g = m(/^\/topic\/([0-9a-fA-F]+)$/))) return viewFeed("top", g[1]);
+  if ((g = m(/^\/author\/([0-9a-fA-F]+)$/))) return viewAuthor(g[1]);
+  if (h === "/new") return viewFeed("new");
+  if (h === "/topics") return viewTopics();
+  return viewFeed("top");
+}
+
+window.addEventListener("hashchange", router);
+document.getElementById("nsfw").addEventListener("change", router);
+router();
+</script>
+</body>
+</html>

@@ -175,13 +175,20 @@ func resolveNow(nowUnix int64) int64 {
 	return nowUnix
 }
 
-// rankScore is the Hacker News formula: (points - 1) / (age_hours + 2)^1.8.
+// rankScore is the Hacker News gravity formula adapted for CoinNews:
+//
+//	points / (age_hours + 2)^1.8
+//
+// The canonical HN formula uses (points - 1) to discount the submitter's
+// implicit self-vote, but CoinNews posts have no self-vote — so we drop the -1.
+// That keeps an unvoted post at score 0 (instead of going negative and inverting
+// the age decay, which would sort newest-last); ties then fall back to newest.
 func rankScore(points int, nowUnix, blockTime int64) float64 {
 	ageHours := float64(nowUnix-blockTime) / 3600.0
 	if ageHours < 0 {
 		ageHours = 0
 	}
-	return float64(points-1) / math.Pow(ageHours+2.0, 1.8)
+	return float64(points) / math.Pow(ageHours+2.0, 1.8)
 }
 
 // sortByScore orders highest score first, breaking ties by height descending.

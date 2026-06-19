@@ -51,8 +51,9 @@ go run . run -rpc … -rpcuser … -rpcpass …   # live: index + serve (preferr
 - **Topic creation first-wins; vote latest-per-(target,author) wins.**
 - **Cursor** (height+hash) persisted; reorgs detected via prev-hash mismatch →
   rewind `ReorgDepth` (default 6).
-- **Ranking:** HN `(points-1)/(age_hours+2)^1.8`, computed in Go with an injectable
-  clock. Topics list only created ones; zero topic (`00000000`) never listed.
+- **Ranking:** HN gravity `points/(age_hours+2)^1.8` (no `-1` — CoinNews has no
+  self-vote, so unvoted posts score 0 and tie-break to newest, not invert). Computed
+  in Go with an injectable clock. Topics list only created; zero topic never listed.
 - **Story authorship** is layered from the story's earliest direct comment
   (`author_xpk`); `ListByAuthor` returns stories so authored.
 

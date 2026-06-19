@@ -184,6 +184,31 @@ func TestOnlyCreatedTopicsListed(t *testing.T) {
 	})
 }
 
+func TestFrontPageUnvotedIsNewestFirst(t *testing.T) {
+	eachBackend(t, func(t *testing.T, s Store) {
+		ctx := context.Background()
+		now := int64(1_000_000_000)
+		// Three unvoted stories at increasing heights/times (older -> newer).
+		seedStoryAt(t, s, id(1), topic(1), "oldest", 10, now-30*3600, false)
+		seedStoryAt(t, s, id(2), topic(1), "middle", 20, now-20*3600, false)
+		seedStoryAt(t, s, id(3), topic(1), "newest", 30, now-10*3600, false)
+
+		fp, err := s.FrontPage(ctx, FeedQuery{NowUnix: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// With no votes every score is 0, so the front page must be newest-first
+		// (not inverted to oldest-first).
+		got := []string{fp[0].Headline, fp[1].Headline, fp[2].Headline}
+		want := []string{"newest", "middle", "oldest"}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("unvoted front page order = %v, want %v", got, want)
+			}
+		}
+	})
+}
+
 func TestFirstCommentAuthorship(t *testing.T) {
 	eachBackend(t, func(t *testing.T, s Store) {
 		ctx := context.Background()
